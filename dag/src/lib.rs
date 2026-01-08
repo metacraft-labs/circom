@@ -10,13 +10,28 @@ use constraint_writers::debug_writer::DebugWriter;
 use constraint_writers::ConstraintExporter;
 use program_structure::constants::UsefulConstants;
 use program_structure::error_definition::ReportCollection;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, LinkedList};
 type Signal = usize;
 type Constraint = circom_algebra::algebra::Constraint<usize>;
 type Substitution = circom_algebra::algebra::Substitution<usize>;
 type Range = std::ops::Range<usize>;
 
 pub type FastSubAccess = HashMap<usize, Substitution>;
+
+
+#[derive(Default)]
+pub struct TreeConstraints {
+    pub number_constraints: usize,
+    pub node_id: usize,
+    pub template_name: String,
+    pub number_signals: usize,
+    pub number_inputs: usize, 
+    pub number_outputs: usize,
+    pub initial_signal: usize,
+    pub subcomponents: LinkedList<TreeConstraints>,
+    pub is_custom: bool,
+}
+
 
 pub struct Tree<'a> {
     dag: &'a DAG,
@@ -165,7 +180,8 @@ impl Node {
         is_custom_gate: bool
     ) -> Node {
         Node {
-            template_name, entry: Edge::new_entry(id),
+            template_name, 
+            entry: Edge::new_entry(id),
             parameters,
             number_of_components: 1,
             is_parallel,
@@ -540,6 +556,10 @@ impl DAG {
 
     pub fn map_to_list(self, flags: SimplificationFlags) -> ConstraintList {
         map_to_constraint_list::map(self, flags)
+    }
+
+    pub fn map_to_constraint_tree(&self) -> TreeConstraints {
+        map_to_constraint_list::map_to_constraint_tree(&self)
     }
 }
 

@@ -22,6 +22,9 @@ pub struct ExecutionConfig {
     pub json_substitution_flag: bool,
     pub json_constraint_flag: bool,
     pub prime: String,
+    pub initial_constraints_file: String,
+    pub structure_file: String,
+    pub print_tree_info: bool
 }
 
 pub fn execute_project(
@@ -40,7 +43,10 @@ pub fn execute_project(
         flag_verbose: config.flag_verbose,
         inspect_constraints: config.inspect_constraints_flag,
         flag_old_heuristics: config.flag_old_heuristics,
-        prime : config.prime,
+        prime: config.prime,
+        initial_constraints_file: config.initial_constraints_file,
+        structure_file: config.structure_file,
+        print_tree_info: config.print_tree_info
     };
     let custom_gates = program_archive.custom_gates;
     let (exporter, vcp) = build_circuit(program_archive, build_config)?;

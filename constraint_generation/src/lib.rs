@@ -12,7 +12,7 @@ use circom_algebra::algebra::{ArithmeticError, ArithmeticExpression};
 use compiler::hir::very_concrete_program::VCP;
 use constraint_list::ConstraintList;
 use constraint_writers::ConstraintExporter;
-use dag::DAG;
+use dag::{DAG, TreeConstraints};
 use execution_data::executed_program::ExportResult;
 use execution_data::ExecutedProgram;
 use program_structure::ast::{self};
@@ -21,6 +21,9 @@ use program_structure::error_definition::{Report, ReportCollection};
 use program_structure::file_definition::FileID;
 use program_structure::program_archive::ProgramArchive;
 use std::rc::Rc;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap,BTreeMap};
+
 
 pub struct BuildConfig {
     pub no_rounds: usize,
@@ -33,6 +36,9 @@ pub struct BuildConfig {
     pub flag_old_heuristics: bool,
     pub inspect_constraints: bool,
     pub prime: String,
+    pub print_tree_info: bool,
+    pub initial_constraints_file: String,
+    pub structure_file: String,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -58,6 +64,14 @@ pub fn build_circuit(program: ProgramArchive, config: BuildConfig) -> BuildRespo
     })?;
     if config.inspect_constraints {
         Report::print_reports(&warnings, &files);
+    }
+    if config.print_tree_info {
+        let tree_constraints = dag.map_to_constraint_tree();
+        print_tree_info(
+            &tree_constraints,
+            &config.initial_constraints_file,
+            &config.structure_file
+        );
     }
     if config.flag_f {
         sync_dag_and_vcp(&mut vcp, &mut dag);
@@ -117,4 +131,144 @@ fn simplification_process(vcp: &mut VCP, dag: DAG, config: &BuildConfig) -> Cons
     let list = DAG::map_to_list(dag, flags);
     VCP::add_witness_list(vcp, Rc::new(list.get_witness_as_vec()));
     list
+}
+
+
+#[derive(Deserialize,Serialize, Debug)]
+pub struct TimingInfo{
+    pub graph_construction: f32,
+    pub clustering: f32,
+    pub dag_construction: f32,
+    pub equivalency: f32,
+    pub total: f32,
+}
+
+#[derive(Deserialize,Serialize, Debug, Clone)]
+pub struct NodeInfo{
+    pub node_id: usize,
+    pub constraints: Vec<usize>, //ids of the constraints
+    pub input_signals: Vec<usize>,
+    pub output_signals: Vec<usize>,
+    pub signals: Vec<usize>, 
+    pub is_custom: bool,
+    pub successors: Vec<usize> //ids of the successors 
+
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct StructureInfo {
+    pub timing: TimingInfo,
+    pub nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
+    pub equivalency_local: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
+    pub equivalency_structural: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
+}
+
+
+
+fn print_tree_info(
+    tree_constraints: &TreeConstraints,
+    initial_constraints_file: &String,
+    structure_file: &String,
+){
+    let mut init_constraint_to_node =  BTreeMap::new();
+    
+    let mut equivalence_nodes = HashMap::new();
+    let mut node_info = Vec::new();
+
+    let mut init_c = 0;
+    let mut node_id = 0;
+    build_structure_nodes(&tree_constraints, &mut node_id, &mut init_c, &mut node_info, &mut equivalence_nodes, &mut init_constraint_to_node);
+    let aux_timing = TimingInfo{
+        graph_construction: 0.0,
+        clustering: 0.0,
+        dag_construction: 0.0,
+        equivalency: 0.0,
+        total: 0.0
+    };
+
+    let equiv_to_vec: Vec<Vec<usize>> = equivalence_nodes.into_iter()
+                                        .map(|(_id, class)| class)
+                                        .collect();
+    let structure = StructureInfo{
+        timing: aux_timing,
+        nodes: node_info,
+        equivalency_local: equiv_to_vec.clone(),
+        equivalency_structural: equiv_to_vec
+    };
+
+    let _ = std::fs::write(
+        initial_constraints_file,
+        serde_json::to_string_pretty(&init_constraint_to_node).unwrap(),
+    );
+     
+    let _ = std::fs::write(
+        structure_file,
+        serde_json::to_string_pretty(&structure).unwrap(),
+    );
+}
+
+
+fn build_structure_nodes(
+    tree_constraints: &TreeConstraints,
+    node_id: &mut usize,
+    init_c: &mut usize,
+    node_info: &mut Vec<NodeInfo>,
+    equivalence_nodes: &mut HashMap<usize, Vec<usize>>,
+    init_constraint_to_node: &mut BTreeMap<usize, String>
+) -> usize{
+    
+    let my_node_id = *node_id;
+    *node_id += 1;
+
+    let equivalence_node_id = tree_constraints.node_id;
+    if equivalence_nodes.contains_key(&equivalence_node_id){
+        let ref_equiv = equivalence_nodes.get_mut(&equivalence_node_id).unwrap();
+        ref_equiv.push(my_node_id);
+
+    } else{
+        equivalence_nodes.insert(equivalence_node_id, vec![my_node_id]);
+    }
+
+    init_constraint_to_node.insert(*init_c, tree_constraints.template_name.clone());
+    let mut constraints = Vec::new();
+    for i in 0..tree_constraints.number_constraints{
+        constraints.push(*init_c + i);
+    }
+    *init_c += tree_constraints.number_constraints;
+
+    let mut output_signals = Vec::new();
+    for i in 0..tree_constraints.number_outputs{
+        output_signals.push(tree_constraints.initial_signal + i);
+    } 
+
+    let mut input_signals = Vec::new();
+    for i in 0..tree_constraints.number_inputs{
+        input_signals.push(tree_constraints.initial_signal + tree_constraints.number_outputs + i);
+    } 
+
+    let mut signals = Vec::new();
+    for i in 0..tree_constraints.number_signals{
+        signals.push(tree_constraints.initial_signal + i);
+    } 
+
+    let new_node = NodeInfo{
+        node_id: my_node_id,
+        constraints,
+        input_signals,
+        output_signals,
+        signals,
+        is_custom: tree_constraints.is_custom,
+        successors: Vec::new()
+    };
+    node_info.push(new_node);
+
+    let mut successors = Vec::new();
+    for subcomponent in &tree_constraints.subcomponents{
+        successors.push(
+            build_structure_nodes(subcomponent, node_id, init_c, node_info, equivalence_nodes, init_constraint_to_node)
+        );
+    }
+    node_info[my_node_id].successors = successors;
+
+    my_node_id
 }

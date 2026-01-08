@@ -43,7 +43,10 @@ fn start() -> Result<(), ()> {
         r1cs: user_input.r1cs_file().to_string(),
         json_constraints: user_input.json_constraints_file().to_string(),
         json_substitutions: user_input.json_substitutions_file().to_string(),
-        prime: user_input.prime(),        
+        prime: user_input.prime(),
+        initial_constraints_file: user_input.initial_constraints_file().to_string(),
+        structure_file: user_input.structure_file().to_string(),
+        print_tree_info: user_input.print_tree_info()
     };
     let circuit = execution_user::execute_project(program_archive, config)?;
     let compilation_config = CompilerConfig {

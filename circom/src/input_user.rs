@@ -35,7 +35,10 @@ pub struct Input {
     pub flag_verbose: bool,
     pub flag_no_init: bool,
     pub prime: String,
-    pub link_libraries : Vec<PathBuf>
+    pub link_libraries : Vec<PathBuf>,
+    pub print_tree_info: bool,
+    pub structure_file: PathBuf,
+    pub initial_constraints_file: PathBuf,
 }
 
 
@@ -69,6 +72,9 @@ impl Input {
         let o_style = input_processing::get_simplification_style(&matches)?;
         let sanity_check_style = input_processing::get_sanity_check_style(&matches)?;
         let link_libraries = input_processing::get_link_libraries(&matches);
+        let file_name_initial_constraints = format!("{}_initial_constraints", file_name);
+        let file_structure = format!("{}_structure", file_name);
+        
         Result::Ok(Input {
             //field: P_BN128,
             input_program: input,
@@ -112,7 +118,10 @@ impl Input {
             flag_verbose: input_processing::get_flag_verbose(&matches), 
             flag_no_init: input_processing::get_flag_no_init(&matches), 
             prime: input_processing::get_prime(&matches)?,
-            link_libraries
+            link_libraries,
+            initial_constraints_file: Input::build_output(&output_path, &file_name_initial_constraints, JSON),
+            structure_file: Input::build_output(&output_path, &file_structure, JSON),
+            print_tree_info: input_processing::get_print_tree_info(&matches),
         })
     }
 
@@ -233,6 +242,15 @@ impl Input {
     }
     pub fn prime(&self) -> String{
         self.prime.clone()
+    }
+    pub fn initial_constraints_file(&self) -> &str {
+        self.initial_constraints_file.to_str().unwrap()
+    }
+    pub fn structure_file(&self) -> &str {
+        self.structure_file.to_str().unwrap()
+    }
+    pub fn print_tree_info(&self) -> bool{
+        self.print_tree_info
     }
 }
 mod input_processing {
@@ -392,6 +410,10 @@ mod input_processing {
                
             false => Ok(String::from("bn128")),
         }
+    }
+
+    pub fn get_print_tree_info(matches: &ArgMatches) -> bool {
+        matches.is_present("print_tree_info")
     }
 
     pub fn view() -> ArgMatches<'static> {
@@ -580,6 +602,14 @@ mod input_processing {
                     .default_value("bn128")
                     .display_order(300)
                     .help("To choose the prime number to use to generate the circuit. Receives the name of the curve (bn128, bls12377, bls12381, goldilocks, grumpkin, pallas, secq256r1, vesta)"),
+            )
+            .arg(
+                Arg::with_name("print_tree_info")
+                    .short("print_tree_info")
+                    .long("print_tree_info")
+                    .takes_value(false)
+                    .display_order(990)
+                    .help("To print the structure of the circuit as a tree in JSON format"),  
             )
             .get_matches()
     }

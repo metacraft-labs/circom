@@ -2,11 +2,37 @@ use super::{Constraint, Edge, Node, SimplificationFlags, Tree, DAG};
 use constraint_list::{ConstraintList, DAGEncoding, EncodingEdge, EncodingNode, SignalInfo, Simplifier};
 use program_structure::utils::constants::UsefulConstants;
 use std::collections::{HashSet, LinkedList};
+use crate::TreeConstraints;
 #[derive(Default)]
 struct CHolder {
     linear: LinkedList<Constraint>,
     equalities: LinkedList<Constraint>,
     constant_equalities: LinkedList<Constraint>,
+}
+
+fn map_tree_constraints(
+    tree: &Tree,
+    tree_constraints: &mut TreeConstraints,
+) {
+
+    tree_constraints.template_name = tree.dag.nodes[tree.node_id].template_name.clone();
+    tree_constraints.is_custom = tree.dag.nodes[tree.node_id].is_custom_gate;
+    tree_constraints.number_signals = tree.signals.len();
+    tree_constraints.number_inputs = tree.dag.nodes[tree.node_id].inputs_length;
+    tree_constraints.number_outputs = tree.dag.nodes[tree.node_id].outputs_length;
+    if tree_constraints.number_signals > 0{
+        tree_constraints.initial_signal = tree.signals[0];
+    }
+
+    tree_constraints.node_id = tree.node_id;
+    tree_constraints.number_constraints = tree.constraints.len();
+
+    for edge in Tree::get_edges(tree) {
+        let subtree = Tree::go_to_subtree(tree, edge);
+        let mut subtree_constraints = TreeConstraints::default();
+        map_tree_constraints(&subtree, &mut subtree_constraints);
+        tree_constraints.subcomponents.push_back(subtree_constraints);
+    }
 }
 
 fn map_tree(
@@ -144,4 +170,13 @@ pub fn map(dag: DAG, flags: SimplificationFlags) -> ConstraintList {
         json_substitutions: flags.json_substitutions,
     }
     .simplify_constraints()
+}
+
+
+pub fn map_to_constraint_tree(dag: &DAG) -> TreeConstraints {
+
+    let mut tree_constraints = TreeConstraints::default();
+    map_tree_constraints(&Tree::new(&dag), &mut tree_constraints);
+    
+    tree_constraints
 }
