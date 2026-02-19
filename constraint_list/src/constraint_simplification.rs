@@ -5,6 +5,7 @@ use circom_algebra::num_bigint::BigInt;
 use constraint_writers::json_writer::SubstitutionJSON;
 use std::collections::{HashMap, HashSet, LinkedList, BTreeSet};
 use std::sync::Arc;
+use crate::NodeData;
 
 fn log_substitutions(substitutions: &LinkedList<S>, writer: &mut Option<SubstitutionJSON>) {
     use super::json_porting::port_substitution;
@@ -19,12 +20,12 @@ fn log_substitutions(substitutions: &LinkedList<S>, writer: &mut Option<Substitu
 #[derive(Default, Clone)]
 struct Cluster {
     constraints: LinkedList<C>,
-    num_signals: usize
+    num_signals: usize,
 }
 impl Cluster {
     pub fn new(constraint: C, num_signals: usize) -> Cluster {
-        let mut new = Cluster::default();
-        LinkedList::push_back(&mut new.constraints, constraint);
+        let mut new: Cluster = Cluster::default();
+        LinkedList::push_back(&mut new.constraints, constraint);   
         new.num_signals = num_signals;
         new
     }
@@ -42,7 +43,7 @@ impl Cluster {
     }
 }
 
-fn build_clusters(linear: LinkedList<C>, no_vars: usize) -> Vec<Cluster> {
+fn build_clusters(linear: LinkedList<C>, no_vars: usize, compute_equiv_classes: bool) -> (Vec<Cluster>, Vec<usize>) {
     type ClusterArena = Vec<Option<Cluster>>;
     type ClusterPath = Vec<usize>;
     fn shrink_jumps_and_find(c_to_c: &mut ClusterPath, org: usize) -> usize {
@@ -87,15 +88,40 @@ fn build_clusters(linear: LinkedList<C>, no_vars: usize) -> Vec<Cluster> {
             }
         }
     }
+    let mut cluster_to_final_dest = Vec::new();
     let mut clusters = Vec::new();
+
     for cluster in arena {
         if let Some(cluster) = cluster {
             if Cluster::size(&cluster) != 0 {
+                cluster_to_final_dest.push(clusters.len());
                 Vec::push(&mut clusters, cluster);
+            } else{
+                cluster_to_final_dest.push(no_linear);
             }
+        } else{
+            cluster_to_final_dest.push(no_linear);
         }
     }
-    clusters
+
+
+
+    if compute_equiv_classes{
+        let mut signal_to_final_cluster = vec![no_linear; no_vars];
+        for index  in 0..signal_to_cluster.len(){
+            let cluster = signal_to_cluster[index];
+            if cluster < no_linear{
+                let current_cluster = shrink_jumps_and_find(&mut cluster_to_current, cluster);
+
+                signal_to_final_cluster[index] = cluster_to_final_dest[current_cluster];
+            }
+        } 
+        (clusters, signal_to_final_cluster)
+    } else{
+        (clusters, Vec::new())
+    }
+
+    
 }
 
 fn rebuild_witness(
@@ -196,9 +222,8 @@ fn eq_cluster_simplification(
 }
 
 fn eq_simplification(
-    equalities: LinkedList<C>,
+    clusters: Vec<Cluster>,
     forbidden: Arc<HashSet<usize>>,
-    no_vars: usize,
     field: &BigInt,
     substitution_log: &mut Option<SubstitutionJSON>,
 ) -> (LinkedList<S>, LinkedList<C>) {
@@ -207,7 +232,6 @@ fn eq_simplification(
     let field = Arc::new(field.clone());
     let mut constraints = LinkedList::new();
     let mut substitutions = LinkedList::new();
-    let clusters = build_clusters(equalities, no_vars);
     let (cluster_tx, simplified_rx) = mpsc::channel();
     let pool = ThreadPool::new(num_cpus::get());
     let no_clusters = Vec::len(&clusters);
@@ -288,7 +312,7 @@ fn linear_simplification(
     // println!("Cluster simplification");
     let mut cons = LinkedList::new();
     let mut substitutions = LinkedList::new();
-    let clusters = build_clusters(linear, no_labels);
+    let (clusters, _) = build_clusters(linear, no_labels, false);
     let (cluster_tx, simplified_rx) = mpsc::channel();
     let pool = ThreadPool::new(num_cpus::get());
     let no_clusters = Vec::len(&clusters);
@@ -438,12 +462,68 @@ fn remove_not_relevant(substitutions: &mut SEncoded, relevant: &HashSet<usize>) 
 }
 
 
+fn find_equivalent_template_instances(
+    nodes_data: &Vec<NodeData>,
+    nodes_to_consider: &Vec<usize>,
+    equivalent_signal_classes: &Vec<usize>,
+    no_linear: usize
+) -> LinkedList<(usize, usize)>{
+    let mut eliminated_nodes = HashSet::new();
+    let mut equivalent_nodes = LinkedList::new();
+
+    for initial_node in 0..nodes_to_consider.len(){
+        if eliminated_nodes.contains(&initial_node){
+            continue;
+        }
+        let initial_node_info = nodes_data.get(initial_node).unwrap();
+        for to_compare in initial_node + 1 .. nodes_to_consider.len(){
+            let to_compare_info = nodes_data.get(to_compare).unwrap();
+            let mut is_equal = true;
+            for input in 0..initial_node_info.number_inputs{
+                let input_initial = initial_node_info.initial_signal + initial_node_info.number_outputs + input;
+                let input_to_compare = to_compare_info.initial_signal + to_compare_info.number_outputs + input;
+
+                if equivalent_signal_classes[input_initial] != equivalent_signal_classes[input_to_compare] ||  equivalent_signal_classes[input_initial] == no_linear{
+                    is_equal = false;
+                    break;
+                }
+
+            }
+            if is_equal{
+                equivalent_nodes.push_back((initial_node, to_compare));
+                eliminated_nodes.insert(to_compare);
+            }
+        }
+    }
+    equivalent_nodes
+}
+
+
+fn find_equivalent_templates(
+    nodes_data: &Vec<NodeData>,
+    template_to_nodes: &HashMap<String, Vec<usize>>,
+    equivalent_signal_classes: &Vec<usize>,
+    no_linear: usize
+) -> LinkedList<(usize, usize)>{
+    let mut equivalent_nodes = LinkedList::new();
+    for (template_name, nodes_to_consider) in template_to_nodes{
+        let mut new_equivalent = find_equivalent_template_instances(nodes_data, nodes_to_consider, equivalent_signal_classes, no_linear);
+        equivalent_nodes.append(&mut new_equivalent);
+    }
+    equivalent_nodes
+ 
+}
+
+
+
+
 // returns the constraints, the assignment of the witness and the number of inputs in the witness
 pub fn simplification(smp: &mut Simplifier) -> (ConstraintStorage, SignalMap, usize) {
     use super::non_linear_utils::obtain_and_simplify_non_linear;
     use circom_algebra::simplification_utils::build_encoded_fast_substitutions;
     use circom_algebra::simplification_utils::fast_encoded_constraint_substitution;
     use std::time::SystemTime;
+    use crate::print_pretty_data;
 
     let mut substitution_log =
         if smp.port_substitution { 
@@ -478,13 +558,35 @@ pub fn simplification(smp: &mut Simplifier) -> (ConstraintStorage, SignalMap, us
         relevant
     };
 
+    // Just a test, print the info about the templates and their constraints
+    // for data in &smp.nodes_data{
+    //     print_pretty_data(&data);
+    // }
+
+
     let single_substitutions = {
         // println!("Start of single assignment simplification");
         let now = SystemTime::now();
+        let (clusters, equiv_classes) = build_clusters(equalities, no_labels, true);
+
+        let equivalent_templates = find_equivalent_templates(
+            &smp.nodes_data,
+            &smp.template_to_nodes,
+            &equiv_classes, 
+            no_labels
+        );
+
+        for (t1, t2) in equivalent_templates{
+            println!("The templates {} and {} have equivalent constraints -> We eliminate one of the calls", t1, t2);
+            println!("First template: ");
+            print_pretty_data(&smp.nodes_data[t1]);
+            println!("Second template: ");
+            print_pretty_data(&smp.nodes_data[t2]);
+        }
+
         let (subs, mut cons) = eq_simplification(
-            equalities,
+            clusters,
             Arc::clone(&forbidden),
-            no_labels,
             &field,
             &mut substitution_log,
         );

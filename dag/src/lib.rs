@@ -28,6 +28,9 @@ pub struct Tree<'a> {
     pub forbidden: HashSet<usize>,
     pub id_to_name: HashMap<usize, String>,
     pub constraints: Vec<Constraint>,
+    pub number_inputs: usize,
+    pub number_outputs: usize,
+    pub template_name: String
 }
 
 impl<'a> Tree<'a> {
@@ -50,7 +53,24 @@ impl<'a> Tree<'a> {
             }
         }
         signals.sort();
-        Tree { field, dag, path, offset, node_id, signals, forbidden, id_to_name, constraints }
+        let number_outputs = root.outputs_length;
+        let number_inputs = root.inputs_length;
+        let template_name = root.template_name.clone();
+
+        Tree { 
+            field, 
+            dag, 
+            path, 
+            offset, 
+            node_id, 
+            signals, 
+            forbidden, 
+            id_to_name, 
+            constraints,
+            number_inputs,
+            number_outputs ,
+            template_name
+        }
     }
 
     pub fn go_to_subtree(current: &'a Tree, edge: &Edge) -> Tree<'a> {
@@ -69,14 +89,32 @@ impl<'a> Tree<'a> {
                 HashMap::insert(&mut id_to_name, *id + offset, name.clone());
             }
         }
+        
         signals.sort();
+        let number_outputs = node.outputs_length;
+        let number_inputs = node.inputs_length;
+
         let constraints: Vec<_> = node
             .constraints
             .iter()
             .filter(|c| !c.is_empty())
             .map(|c| Constraint::apply_offset(c, offset))
             .collect();
-        Tree { field, dag, path, offset, node_id, signals, forbidden, id_to_name, constraints }
+        let template_name = node.template_name.clone();
+        Tree {
+            field,
+            dag, 
+            path, 
+            offset, 
+            node_id, 
+            signals, 
+            forbidden, 
+            id_to_name, 
+            constraints,
+            number_inputs,
+            number_outputs,
+            template_name,
+        }
     }
 
     pub fn get_edges(tree: &'a Tree) -> &'a Vec<Edge> {

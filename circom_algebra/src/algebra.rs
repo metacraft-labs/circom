@@ -1193,6 +1193,13 @@ impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
         )
     }
 
+    pub fn print_pretty_constraint(&self) {
+        println!("--- Printing constraint");
+        println!("A: {}", ArithmeticExpression::string_from_coefficients(self.a()));
+        println!("B: {}", ArithmeticExpression::string_from_coefficients(self.b()));
+        println!("C: {}", ArithmeticExpression::string_from_coefficients(self.c()));
+    }
+
 }
 
 impl<C: Default + Clone + Display + Hash + Eq + std::cmp::Ord> Constraint<C> {

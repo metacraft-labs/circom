@@ -107,6 +107,40 @@ impl<'a> EncodingIterator<'a> {
     }
 }
 
+#[derive(Clone)]
+pub struct ConstraintCounter{
+    pub num_constant_eq: usize,
+    pub num_signal_eq: usize,
+    pub num_linear_eq: usize,
+    pub num_no_linear_eq: usize
+}
+
+pub struct NodeData{
+    pub template_instance: String, 
+    pub number_inputs: usize,
+    pub number_outputs: usize,
+    pub initial_signal: usize,
+    //pub number_signals: usize,
+    pub num_constraint_counter: ConstraintCounter,
+    pub init_constraint_counter: ConstraintCounter,
+}
+
+pub fn print_pretty_data(data: &NodeData){
+    println!("NODE DATA:\n
+     * Template name: {}\n
+     * Number inputs {} outputs {}\n
+     * Initial signal {} \n
+     * Initial ce {} se {} le {} nle {}\n
+     * Number of ce {} se {} le {} nle {}\n
+    ", data.template_instance, data.number_inputs, data.number_outputs,
+       data.initial_signal, data.init_constraint_counter.num_constant_eq, 
+       data.init_constraint_counter.num_signal_eq, data.init_constraint_counter.num_linear_eq, 
+       data.init_constraint_counter.num_no_linear_eq, data.num_constraint_counter.num_constant_eq, 
+       data.num_constraint_counter.num_signal_eq, data.num_constraint_counter.num_linear_eq, 
+       data.num_constraint_counter.num_no_linear_eq 
+    );
+}
+
 pub struct Simplifier {
     pub field: BigInt,
     pub dag_encoding: DAGEncoding,
@@ -126,6 +160,11 @@ pub struct Simplifier {
     pub flag_old_heuristics: bool,
     pub port_substitution: bool,
     pub json_substitutions: String,
+
+    // For the equivalent templates simplification, store for each node_id the template, initial cons, number constraints, inputs and outputs
+    // For each template store the node_ids that implement it
+    pub nodes_data: Vec<NodeData>,
+    pub template_to_nodes: HashMap<String, Vec<usize>> 
 }
 impl Simplifier {
     pub fn simplify_constraints(mut self) -> ConstraintList {
