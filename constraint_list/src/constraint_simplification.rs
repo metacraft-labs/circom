@@ -471,14 +471,18 @@ fn find_equivalent_template_instances(
     let mut eliminated_nodes = HashSet::new();
     let mut equivalent_nodes = LinkedList::new();
 
-    for initial_node in 0..nodes_to_consider.len(){
+    for initial_index in 0..nodes_to_consider.len(){
+        let initial_node = nodes_to_consider[initial_index];
         if eliminated_nodes.contains(&initial_node){
             continue;
         }
         let initial_node_info = nodes_data.get(initial_node).unwrap();
-        for to_compare in initial_node + 1 .. nodes_to_consider.len(){
+        for to_compare_index in initial_index + 1 .. nodes_to_consider.len(){
+            let to_compare = nodes_to_consider[to_compare_index];
             let to_compare_info = nodes_data.get(to_compare).unwrap();
             let mut is_equal = true;
+            assert!(initial_node_info.template_instance == to_compare_info.template_instance);
+
             for input in 0..initial_node_info.number_inputs{
                 let input_initial = initial_node_info.initial_signal + initial_node_info.number_outputs + input;
                 let input_to_compare = to_compare_info.initial_signal + to_compare_info.number_outputs + input;
