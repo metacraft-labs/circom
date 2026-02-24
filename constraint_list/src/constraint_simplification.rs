@@ -471,12 +471,11 @@ fn find_equivalent_template_instances(
     let mut equivalent_nodes = LinkedList::new();
 
     let mut classes_to_nodes:HashMap<Vec<usize>, Vec<usize>> = HashMap::new();
-
     for initial_index in 0..nodes_to_consider.len(){
         let initial_node = nodes_to_consider[initial_index];
         let initial_node_info = nodes_data.get(initial_node).unwrap();
         
-
+        
         let mut classes_inputs = Vec::new();
         let mut is_valid = true;
         for input in 0..initial_node_info.number_inputs{
@@ -583,22 +582,40 @@ pub fn simplification(smp: &mut Simplifier) -> (ConstraintStorage, SignalMap, us
     let single_substitutions = {
         // println!("Start of single assignment simplification");
         let now = SystemTime::now();
+        let len_eq = equalities.len();
         let (clusters, equiv_classes) = build_clusters(equalities, no_labels, true);
 
         let equivalent_templates = find_equivalent_templates(
             &smp.nodes_data,
             &smp.template_to_nodes,
             &equiv_classes, 
-            no_labels
+            len_eq
         );
 
+        let mut num_sig_eq = 0;
+        let mut num_cons_eq = 0;
+        let mut num_linear = 0;
+        let mut num_no_linear = 0;
         for (t1, t2) in equivalent_templates{
             println!("The templates {} and {} have equivalent constraints -> We eliminate one of the calls", t1, t2);
             println!("First template: ");
             print_pretty_data(&smp.nodes_data[t1]);
             println!("Second template: ");
             print_pretty_data(&smp.nodes_data[t2]);
+            num_sig_eq += smp.nodes_data[t2].num_constraint_counter.num_signal_eq;
+            num_cons_eq += smp.nodes_data[t2].num_constraint_counter.num_constant_eq;
+            num_linear += smp.nodes_data[t2].num_constraint_counter.num_linear_eq;
+            num_no_linear += smp.nodes_data[t2].num_constraint_counter.num_no_linear_eq;
+
         }
+
+        println!("Total number of constraints eliminated: ");
+        println!("* Signals equalities: {}", num_sig_eq);
+        println!("* Constants equalities: {}", num_cons_eq);
+        println!("* Linear equalities: {}", num_linear);
+        println!("* No linear equalities: {}", num_no_linear);
+
+
 
         let (subs, mut cons) = eq_simplification(
             clusters,
