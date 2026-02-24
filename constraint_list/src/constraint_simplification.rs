@@ -468,37 +468,49 @@ fn find_equivalent_template_instances(
     equivalent_signal_classes: &Vec<usize>,
     no_linear: usize
 ) -> LinkedList<(usize, usize)>{
-    let mut eliminated_nodes = HashSet::new();
     let mut equivalent_nodes = LinkedList::new();
+
+    let mut classes_to_nodes:HashMap<Vec<usize>, Vec<usize>> = HashMap::new();
 
     for initial_index in 0..nodes_to_consider.len(){
         let initial_node = nodes_to_consider[initial_index];
-        if eliminated_nodes.contains(&initial_node){
-            continue;
-        }
         let initial_node_info = nodes_data.get(initial_node).unwrap();
-        for to_compare_index in initial_index + 1 .. nodes_to_consider.len(){
-            let to_compare = nodes_to_consider[to_compare_index];
-            let to_compare_info = nodes_data.get(to_compare).unwrap();
-            let mut is_equal = true;
-            assert!(initial_node_info.template_instance == to_compare_info.template_instance);
+        
 
-            for input in 0..initial_node_info.number_inputs{
-                let input_initial = initial_node_info.initial_signal + initial_node_info.number_outputs + input;
-                let input_to_compare = to_compare_info.initial_signal + to_compare_info.number_outputs + input;
+        let mut classes_inputs = Vec::new();
+        let mut is_valid = true;
+        for input in 0..initial_node_info.number_inputs{
+            let input_initial = initial_node_info.initial_signal + initial_node_info.number_outputs + input;
+            let class_initial = equivalent_signal_classes[input_initial];
+            if class_initial == no_linear{
+                is_valid = false;
+                break;
+            }
+            classes_inputs.push(class_initial);
+        }
 
-                if equivalent_signal_classes[input_initial] != equivalent_signal_classes[input_to_compare] ||  equivalent_signal_classes[input_initial] == no_linear{
-                    is_equal = false;
-                    break;
+        if is_valid{
+            match classes_to_nodes.get_mut(&classes_inputs){
+                Some(nodes) =>{
+                    nodes.push(initial_node);
+                },
+                None =>{
+                    classes_to_nodes.insert(classes_inputs.clone(), vec![initial_node]);
                 }
+            }
+        }
+        
+    }
 
-            }
-            if is_equal{
-                equivalent_nodes.push_back((initial_node, to_compare));
-                eliminated_nodes.insert(to_compare);
-            }
+    for (_, nodes_class) in classes_to_nodes{
+        let node_init = nodes_class[0];
+        for i in 1..nodes_class.len(){
+            equivalent_nodes.push_back((node_init, nodes_class[i]));
         }
     }
+        
+       
+    
     equivalent_nodes
 }
 
