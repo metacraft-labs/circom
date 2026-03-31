@@ -63,7 +63,9 @@ fn start() -> Result<(), ()> {
         produce_input_log: user_input.main_inputs_flag(),
         sanity_check_style: user_input.sanity_check_style(),
         no_asm_flag: user_input.no_asm_flag(),
-        prime: user_input.prime(),        
+        prime: user_input.prime(),
+        srcmap_flag: user_input.srcmap_flag(),
+        srcmap_file: user_input.srcmap_file().to_string(),
     };
     compilation_user::compile(compilation_config)?;
     Result::Ok(())

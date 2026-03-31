@@ -100,6 +100,7 @@ version = "2.2.3"
 dependencies = [
  "ansi_term",
  "clap",
+ "code_producers",
  "compiler",
  "constraint_generation",
  "constraint_writers",
@@ -143,6 +144,7 @@ dependencies = [
  "handlebars",
  "lz_fnv",
  "num-bigint-dig",
+ "program_structure",
  "serde_json",
 ]
 

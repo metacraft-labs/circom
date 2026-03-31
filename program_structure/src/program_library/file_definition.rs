@@ -31,6 +31,20 @@ impl FileLibrary {
             None => None,
         }
     }
+    pub fn get_column(&self, start: usize, file_id: FileID) -> Option<usize> {
+        if let Some(line_index) = self.files.line_index(file_id, start) {
+            if let Some(line_range) = self.files.line_range(file_id, line_index) {
+                Some(start - line_range.start + 1)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+    pub fn get_file_path(&self, file_id: FileID) -> Option<String> {
+        self.files.name(file_id)
+    }
     pub fn to_storage(&self) -> &FileStorage {
         &self.get_files()
     }

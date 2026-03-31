@@ -1,6 +1,7 @@
 use ansi_term::Colour;
 use compiler::compiler_interface;
 use compiler::compiler_interface::{Config, VCP};
+use code_producers::source_map::{self, SourceMap};
 use program_structure::error_definition::Report;
 use program_structure::error_code::ReportCode;
 use program_structure::file_definition::FileLibrary;
@@ -26,10 +27,15 @@ pub struct CompilerConfig {
     pub sanity_check_style: usize,
 
     pub prime: String,
+    pub srcmap_flag: bool,
+    pub srcmap_file: String,
 }
 
 pub fn compile(config: CompilerConfig) -> Result<(), ()> {
 
+    if config.srcmap_flag {
+        generate_source_map(&config.vcp, &config.srcmap_file)?;
+    }
 
     if config.c_flag || config.wat_flag || config.wasm_flag{
         let circuit = compiler_interface::run_compiler(
@@ -138,6 +144,49 @@ pub fn compile(config: CompilerConfig) -> Result<(), ()> {
     Ok(())
 }
 
+
+fn generate_source_map(vcp: &VCP, srcmap_file: &str) -> Result<(), ()> {
+    let mut srcmap = SourceMap::new();
+
+    // Collect all referenced source files
+    for (template_id, template) in vcp.templates.iter().enumerate() {
+        // Walk the template code AST and collect source map entries
+        source_map::collect_source_map_entries(
+            &template.template_name,
+            template_id,
+            &template.code,
+            &vcp.file_library,
+            &mut srcmap,
+        );
+    }
+
+    // Deduplicate and register all referenced files
+    let mut seen_file_ids = std::collections::HashSet::new();
+    let mut files_to_add: Vec<(usize, String)> = Vec::new();
+    for entry in &srcmap.mappings {
+        if seen_file_ids.insert(entry.file_id) {
+            files_to_add.push((entry.file_id, entry.source_file.clone()));
+        }
+    }
+    for (id, path) in files_to_add {
+        srcmap.add_file(id, path);
+    }
+
+    match srcmap.write_to_file(srcmap_file) {
+        Ok(()) => {
+            println!(
+                "{} {}",
+                Colour::Green.paint("Written successfully:"),
+                srcmap_file
+            );
+            Ok(())
+        }
+        Err(msg) => {
+            eprintln!("{}", Colour::Red.paint(msg));
+            Err(())
+        }
+    }
+}
 
 fn wat_to_wasm(wat_file: &str, wasm_file: &str) -> Result<(), Report> {
     use std::fs::read_to_string;
