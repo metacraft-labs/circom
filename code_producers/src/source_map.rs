@@ -235,3 +235,221 @@ fn make_entry(
         source_column: column,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_map_new_is_empty() {
+        let sm = SourceMap::new();
+        assert_eq!(sm.version, 1);
+        assert!(sm.files.is_empty());
+        assert!(sm.mappings.is_empty());
+    }
+
+    #[test]
+    fn add_file_no_duplicates() {
+        let mut sm = SourceMap::new();
+        sm.add_file(0, "a.circom".to_string());
+        sm.add_file(0, "a.circom".to_string()); // duplicate
+        sm.add_file(1, "b.circom".to_string());
+        assert_eq!(sm.files.len(), 2);
+        assert_eq!(sm.files[0].path, "a.circom");
+        assert_eq!(sm.files[1].path, "b.circom");
+    }
+
+    #[test]
+    fn add_entry_and_count() {
+        let mut sm = SourceMap::new();
+        sm.add_entry(SourceMapEntry {
+            template_name: "Main".to_string(),
+            template_id: 0,
+            signal_name: Some("out".to_string()),
+            statement_type: "signal_assign".to_string(),
+            file_id: 0,
+            source_file: "test.circom".to_string(),
+            source_line: 5,
+            source_column: 3,
+        });
+        sm.add_entry(SourceMapEntry {
+            template_name: "Main".to_string(),
+            template_id: 0,
+            signal_name: None,
+            statement_type: "constraint_equality".to_string(),
+            file_id: 0,
+            source_file: "test.circom".to_string(),
+            source_line: 6,
+            source_column: 3,
+        });
+        assert_eq!(sm.mappings.len(), 2);
+    }
+
+    #[test]
+    fn to_json_round_trip_structure() {
+        let mut sm = SourceMap::new();
+        sm.add_file(0, "main.circom".to_string());
+        sm.add_entry(SourceMapEntry {
+            template_name: "Adder".to_string(),
+            template_id: 0,
+            signal_name: Some("sum".to_string()),
+            statement_type: "signal_assign".to_string(),
+            file_id: 0,
+            source_file: "main.circom".to_string(),
+            source_line: 10,
+            source_column: 5,
+        });
+
+        let json_str = sm.to_json();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json_str).expect("JSON must be valid");
+
+        assert_eq!(parsed["version"], 1);
+
+        let files = parsed["files"].as_array().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0]["path"], "main.circom");
+
+        let mappings = parsed["mappings"].as_array().unwrap();
+        assert_eq!(mappings.len(), 1);
+        assert_eq!(mappings[0]["templateName"], "Adder");
+        assert_eq!(mappings[0]["signalName"], "sum");
+        assert_eq!(mappings[0]["statementType"], "signal_assign");
+        assert_eq!(mappings[0]["sourceLine"], 10);
+        assert_eq!(mappings[0]["sourceColumn"], 5);
+    }
+
+    #[test]
+    fn to_json_omits_signal_name_when_none() {
+        let mut sm = SourceMap::new();
+        sm.add_entry(SourceMapEntry {
+            template_name: "T".to_string(),
+            template_id: 0,
+            signal_name: None,
+            statement_type: "constraint_equality".to_string(),
+            file_id: 0,
+            source_file: "t.circom".to_string(),
+            source_line: 1,
+            source_column: 1,
+        });
+
+        let json_str = sm.to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        let mapping = &parsed["mappings"][0];
+        assert!(
+            mapping.get("signalName").is_none(),
+            "signalName should be omitted when None"
+        );
+    }
+
+    #[test]
+    fn write_to_file_and_read_back() {
+        let mut sm = SourceMap::new();
+        sm.add_file(0, "test.circom".to_string());
+        sm.add_entry(SourceMapEntry {
+            template_name: "Main".to_string(),
+            template_id: 0,
+            signal_name: Some("x".to_string()),
+            statement_type: "var_declaration".to_string(),
+            file_id: 0,
+            source_file: "test.circom".to_string(),
+            source_line: 3,
+            source_column: 7,
+        });
+
+        let tmpdir = std::env::temp_dir();
+        let path = tmpdir.join("circom_srcmap_test.json");
+        let path_str = path.to_str().unwrap();
+
+        sm.write_to_file(path_str).expect("write must succeed");
+
+        let content = std::fs::read_to_string(path_str).expect("read must succeed");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&content).expect("JSON must be valid");
+        assert_eq!(parsed["version"], 1);
+        assert_eq!(parsed["files"][0]["path"], "test.circom");
+        assert_eq!(parsed["mappings"][0]["signalName"], "x");
+
+        // Clean up
+        std::fs::remove_file(path_str).ok();
+    }
+
+    #[test]
+    fn multiple_files_in_source_map() {
+        let mut sm = SourceMap::new();
+        sm.add_file(0, "main.circom".to_string());
+        sm.add_file(1, "lib/utils.circom".to_string());
+        sm.add_entry(SourceMapEntry {
+            template_name: "Main".to_string(),
+            template_id: 0,
+            signal_name: Some("a".to_string()),
+            statement_type: "signal_input_declaration".to_string(),
+            file_id: 0,
+            source_file: "main.circom".to_string(),
+            source_line: 2,
+            source_column: 3,
+        });
+        sm.add_entry(SourceMapEntry {
+            template_name: "Utils".to_string(),
+            template_id: 1,
+            signal_name: Some("b".to_string()),
+            statement_type: "signal_output_declaration".to_string(),
+            file_id: 1,
+            source_file: "lib/utils.circom".to_string(),
+            source_line: 5,
+            source_column: 3,
+        });
+
+        let json_str = sm.to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        let files = parsed["files"].as_array().unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[1]["path"], "lib/utils.circom");
+
+        let mappings = parsed["mappings"].as_array().unwrap();
+        assert_eq!(mappings.len(), 2);
+        assert_eq!(mappings[0]["fileId"], 0);
+        assert_eq!(mappings[1]["fileId"], 1);
+    }
+
+    #[test]
+    fn all_statement_types_serialized() {
+        let types = vec![
+            "signal_assign",
+            "constraint_signal_assign",
+            "var_assign",
+            "multi_signal_assign",
+            "constraint_equality",
+            "signal_input_declaration",
+            "signal_output_declaration",
+            "signal_intermediate_declaration",
+            "component_declaration",
+            "var_declaration",
+            "return",
+            "assert",
+        ];
+
+        let mut sm = SourceMap::new();
+        for (i, st) in types.iter().enumerate() {
+            sm.add_entry(SourceMapEntry {
+                template_name: "T".to_string(),
+                template_id: 0,
+                signal_name: None,
+                statement_type: st.to_string(),
+                file_id: 0,
+                source_file: "t.circom".to_string(),
+                source_line: i + 1,
+                source_column: 1,
+            });
+        }
+
+        let json_str = sm.to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        let mappings = parsed["mappings"].as_array().unwrap();
+        assert_eq!(mappings.len(), types.len());
+        for (i, st) in types.iter().enumerate() {
+            assert_eq!(mappings[i]["statementType"], *st);
+        }
+    }
+}
