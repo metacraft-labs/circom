@@ -35,7 +35,9 @@ pub struct Input {
     pub flag_verbose: bool,
     pub flag_no_init: bool,
     pub prime: String,
-    pub link_libraries : Vec<PathBuf>
+    pub link_libraries : Vec<PathBuf>,
+    pub srcmap_flag: bool,
+    pub out_srcmap: PathBuf,
 }
 
 
@@ -47,6 +49,7 @@ const JS: &'static str = "js";
 const DAT: &'static str = "dat";
 const SYM: &'static str = "sym";
 const JSON: &'static str = "json";
+const SRCMAP: &'static str = "srcmap.json";
 
 
 impl Input {
@@ -112,7 +115,9 @@ impl Input {
             flag_verbose: input_processing::get_flag_verbose(&matches), 
             flag_no_init: input_processing::get_flag_no_init(&matches), 
             prime: input_processing::get_prime(&matches)?,
-            link_libraries
+            link_libraries,
+            srcmap_flag: input_processing::get_srcmap(&matches),
+            out_srcmap: Input::build_output(&output_path, &file_name, SRCMAP),
         })
     }
 
@@ -233,6 +238,12 @@ impl Input {
     }
     pub fn prime(&self) -> String{
         self.prime.clone()
+    }
+    pub fn srcmap_flag(&self) -> bool {
+        self.srcmap_flag
+    }
+    pub fn srcmap_file(&self) -> &str {
+        self.out_srcmap.to_str().unwrap()
     }
 }
 mod input_processing {
@@ -367,6 +378,9 @@ mod input_processing {
 
     pub fn get_flag_old_heuristics(matches: &ArgMatches) -> bool {
         matches.is_present("flag_old_heuristics")
+    }
+    pub fn get_srcmap(matches: &ArgMatches) -> bool {
+        matches.is_present("srcmap")
     }
     pub fn get_prime(matches: &ArgMatches) -> Result<String, ()> {
         
@@ -571,6 +585,13 @@ mod input_processing {
                     .takes_value(false)
                     .display_order(980)
                     .help("Applies the old version of the heuristics when performing linear simplification"),
+            )
+            .arg(
+                Arg::with_name("srcmap")
+                    .long("srcmap")
+                    .takes_value(false)
+                    .display_order(155)
+                    .help("Generates a source map (.srcmap.json) mapping signal operations to source locations"),
             )
             .arg (
                 Arg::with_name("prime")
